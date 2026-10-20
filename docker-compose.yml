@@ -1,0 +1,40 @@
+services:
+  snippet-permission-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - github_username
+        - github_token
+
+    ports:
+      - "${PERMISSION_SERVICE_PORT}:8080"
+
+    environment:
+      DB_HOST: snippet-permission-db
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+    depends_on:
+      - snippet-permission-db
+
+  snippet-permission-db:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+    volumes:
+      - snippet-permission-db-data:/var/lib/postgresql/data
+
+volumes:
+  snippet-permission-db-data:
+
+secrets:
+  github_username:
+    environment: USERNAME
+  github_token:
+    environment: TOKEN

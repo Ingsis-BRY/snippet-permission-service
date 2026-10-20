@@ -1,0 +1,14 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+# aligned with MaxLineLength from config/detekt/detekt.yml;
+# the default from ktlint is 140
+max_line_length = 100
+indent_style = space
+indent_size = 4
