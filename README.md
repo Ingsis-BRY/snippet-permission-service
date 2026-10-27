@@ -197,6 +197,24 @@ plugins:
 The image is pushed with the workflow's own `GITHUB_TOKEN`, so the package must allow write
 access from this repository.
 
+## Deployment
+
+The service is deployed in the Docker Swarm stack defined in
+[`snippet-searcher-infra`](https://github.com/Ingsis-BRY/snippet-searcher-infra), next to
+`snippet-service`:
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `snippet-permission-service` | `$PERMISSION_SERVICE_IMAGE` | Published on port `8081` |
+| `snippet-permission-db` | `postgres:17` | Own volume, pinned to the manager node |
+
+Inside the `snippet-network` overlay network other services reach it at
+`http://snippet-permission-service:8080`. The stack provides the database through
+`PERMISSION_POSTGRES_DB`, `PERMISSION_POSTGRES_USER` and `PERMISSION_POSTGRES_PASSWORD`,
+mapped to the `POSTGRES_*` variables the service reads.
+
+The package in GHCR is public, so Swarm nodes pull the image without logging in.
+
 ## Tests
 
 | Suite | Scope |
@@ -236,4 +254,4 @@ does not need Docker.
 
 - Integration with `snippet-service` (owner registration on create, permission checks, listing).
 - Auth0: JWT validation, user identity and user search for #7.
-- Deployment in the Docker Swarm stack of `snippet-searcher-infra`.
+- Routing through the Nginx gateway of the stack instead of the published port `8081`.
