@@ -179,6 +179,24 @@ The service listens on `http://localhost:8080` and uses its own database contain
 | `DB_HOST` | Database host (set by compose, defaults to `localhost`) |
 | `DB_PORT` | Database port (defaults to `5432`) |
 
+## Continuous integration
+
+| Workflow | Trigger | What it does |
+| --- | --- | --- |
+| `CI.yml` | Pull request or push to `main` | Runs `./gradlew check` |
+| `publish-image.yml` | Push to `main` | Builds and pushes `ghcr.io/ingsis-bry/snippet-permission-service` tagged `latest` and with the commit SHA |
+
+Both workflows need these repository (or organization) secrets to resolve the convention
+plugins:
+
+| Secret | Value |
+| --- | --- |
+| `GH_PACKAGES_USERNAME` | GitHub user that owns the token |
+| `GH_PACKAGES_TOKEN` | Classic token with `read:packages` |
+
+The image is pushed with the workflow's own `GITHUB_TOKEN`, so the package must allow write
+access from this repository.
+
 ## Tests
 
 | Suite | Scope |
