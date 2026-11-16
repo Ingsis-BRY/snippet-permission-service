@@ -7,3 +7,12 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Auth0's "iss" claim is "https://<tenant-domain>/", with the trailing slash.
+          issuer-uri: "https://${AUTH0_DOMAIN}/"
+          # Rejects tokens that were not issued for the Snippet Searcher API.
+          audiences: "${AUTH0_AUDIENCE}"

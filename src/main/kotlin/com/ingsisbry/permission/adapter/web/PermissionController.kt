@@ -20,20 +20,23 @@ import com.ingsisbry.permission.application.query.list.ListAccessibleSnippetsQue
 import com.ingsisbry.permission.application.query.list.SnippetRelationship
 import com.ingsisbry.permission.domain.SnippetAction
 import org.springframework.http.HttpStatus
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-private const val USER_HEADER = "X-User-Id"
-
+/**
+ * The caller is always the user of the access token (its `sub` claim): nobody can act, or ask,
+ * on behalf of another user.
+ */
 @RestController
 @RequestMapping("/permissions")
 class PermissionController(
@@ -47,13 +50,14 @@ class PermissionController(
     @PostMapping("/owner")
     @ResponseStatus(HttpStatus.CREATED)
     fun grantOwnership(
+        @AuthenticationPrincipal jwt: Jwt,
         @RequestBody request: GrantOwnershipRequest,
     ): PermissionResponse =
         PermissionResponse.from(
             grantOwnership.execute(
                 GrantOwnershipCommand(
                     snippetId = request.snippetId,
-                    userId = request.userId,
+                    userId = jwt.userId,
                 ),
             ),
         )
@@ -61,14 +65,14 @@ class PermissionController(
     @PostMapping("/share")
     @ResponseStatus(HttpStatus.CREATED)
     fun share(
-        @RequestHeader(USER_HEADER) userId: String,
+        @AuthenticationPrincipal jwt: Jwt,
         @RequestBody request: ShareSnippetRequest,
     ): PermissionResponse =
         PermissionResponse.from(
             shareSnippet.execute(
                 ShareSnippetCommand(
                     snippetId = request.snippetId,
-                    requesterId = userId,
+                    requesterId = jwt.userId,
                     targetUserId = request.targetUserId,
                 ),
             ),
@@ -77,14 +81,14 @@ class PermissionController(
     @DeleteMapping("/share/{snippetId}/{targetUserId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun revokeShare(
-        @RequestHeader(USER_HEADER) userId: String,
+        @AuthenticationPrincipal jwt: Jwt,
         @PathVariable snippetId: UUID,
         @PathVariable targetUserId: String,
     ) {
         revokeShare.execute(
             RevokeShareCommand(
                 snippetId = snippetId,
-                requesterId = userId,
+                requesterId = jwt.userId,
                 targetUserId = targetUserId,
             ),
         )
@@ -93,38 +97,42 @@ class PermissionController(
     @GetMapping("/check")
     @ResponseStatus(HttpStatus.OK)
     fun check(
+        @AuthenticationPrincipal jwt: Jwt,
         @RequestParam snippetId: UUID,
-        @RequestParam userId: String,
         @RequestParam action: SnippetAction,
     ): PermissionCheckResponse =
         PermissionCheckResponse(
-            allowed = checkPermission.execute(CheckPermissionQuery(snippetId, userId, action)),
+            allowed = checkPermission.execute(CheckPermissionQuery(snippetId, jwt.userId, action)),
         )
 
     @GetMapping("/snippets")
     @ResponseStatus(HttpStatus.OK)
     fun listAccessibleSnippets(
-        @RequestParam userId: String,
+        @AuthenticationPrincipal jwt: Jwt,
         @RequestParam(defaultValue = "ALL") relationship: SnippetRelationship,
     ): AccessibleSnippetsResponse =
         AccessibleSnippetsResponse(
             snippetIds =
                 listAccessibleSnippets.execute(
-                    ListAccessibleSnippetsQuery(userId, relationship),
+                    ListAccessibleSnippetsQuery(jwt.userId, relationship),
                 ),
         )
 
     @DeleteMapping("/snippets/{snippetId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun deleteSnippetPermissions(
-        @RequestHeader(USER_HEADER) userId: String,
+        @AuthenticationPrincipal jwt: Jwt,
         @PathVariable snippetId: UUID,
     ) {
         deleteSnippetPermissions.execute(
             DeleteSnippetPermissionsCommand(
                 snippetId = snippetId,
-                requesterId = userId,
+                requesterId = jwt.userId,
             ),
         )
     }
 }
+
+/** The caller's id. A token without `sub` gives a blank id, which the use cases reject. */
+private val Jwt.userId: String
+    get() = subject.orEmpty()
