@@ -7,3 +7,11 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Never contacted: tests send mock JWTs that skip the decoder.
+          issuer-uri: "https://auth0.test.invalid/"
+          audiences: "https://snippet-searcher-api"
