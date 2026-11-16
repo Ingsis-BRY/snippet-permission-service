@@ -33,17 +33,19 @@ The rule lives in the domain (`PermissionRole`), not in controllers.
 
 ## API
 
-Base path: `/permissions`. Until Auth0 is integrated, the requesting user is sent in the
-`X-User-Id` header.
+Base path: `/permissions`. Every request needs an Auth0 access token in
+`Authorization: Bearer <token>`. snippet-service forwards the token of the user it is acting
+for. **The caller is always the token's `sub`**: nobody can register, share or ask on behalf of
+another user.
 
-| Method | Path | Caller | Description |
+| Method | Path | Scope | Description |
 | --- | --- | --- | --- |
-| `POST` | `/owner` | snippet-service | Registers the owner of a new snippet |
-| `POST` | `/share` | UI | Shares a snippet (requester must be the owner) |
-| `DELETE` | `/share/{snippetId}/{userId}` | UI | Revokes a share |
-| `GET` | `/check?snippetId&userId&action` | snippet-service | Returns whether the action is allowed |
-| `GET` | `/snippets?userId&relationship` | snippet-service | Snippet ids accessible by a user |
-| `DELETE` | `/snippets/{snippetId}` | snippet-service | Removes every permission of a snippet |
+| `POST` | `/owner` | `write:snippets` | Makes the caller the owner of a new snippet (body `{"snippetId"}`) |
+| `POST` | `/share` | `write:snippets` | Shares a snippet (the caller must be the owner) |
+| `DELETE` | `/share/{snippetId}/{userId}` | `write:snippets` | Revokes a share |
+| `GET` | `/check?snippetId&action` | `read:snippets` | Whether the caller can perform the action |
+| `GET` | `/snippets?relationship` | `read:snippets` | Snippet ids the caller can access |
+| `DELETE` | `/snippets/{snippetId}` | `write:snippets` | Removes every permission of a snippet (owner only) |
 
 `relationship` accepts `OWNER`, `SHARED` or `ALL` (default).
 `action` accepts `READ`, `WRITE`, `SHARE` or `DELETE`.
@@ -51,29 +53,35 @@ Base path: `/permissions`. Until Auth0 is integrated, the requesting user is sen
 ### Examples
 
 ```bash
+TOKEN=<access token of the caller>
+
 curl -X POST localhost:8080/permissions/owner \
-  -H "Content-Type: application/json" \
-  -d '{"snippetId":"<uuid>","userId":"franco"}'
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"snippetId":"<uuid>"}'
 
 curl -X POST localhost:8080/permissions/share \
-  -H "Content-Type: application/json" -H "X-User-Id: franco" \
-  -d '{"snippetId":"<uuid>","targetUserId":"enzo"}'
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"snippetId":"<uuid>","targetUserId":"auth0|<other user>"}'
 
-curl "localhost:8080/permissions/check?snippetId=<uuid>&userId=enzo&action=READ"
+curl -H "Authorization: Bearer $TOKEN" \
+  "localhost:8080/permissions/check?snippetId=<uuid>&action=READ"
 # {"allowed":true}
 
-curl "localhost:8080/permissions/snippets?userId=enzo&relationship=SHARED"
+curl -H "Authorization: Bearer $TOKEN" \
+  "localhost:8080/permissions/snippets?relationship=SHARED"
 # {"snippetIds":["<uuid>"]}
 ```
 
 ### Errors
 
-Errors are returned as `{"message": "..."}`.
+Errors are returned as `{"message": "..."}`, except `401` and `403` from token validation,
+which have no body and a `WWW-Authenticate` header.
 
 | Status | When |
 | --- | --- |
-| `400` | Blank user, sharing with yourself, revoking the owner, missing header, invalid enum |
-| `403` | The requester is not allowed to perform the action |
+| `400` | Token without `sub`, sharing with yourself, revoking the owner, invalid enum |
+| `401` | Missing token, or a token with a bad signature, issuer or audience, or expired |
+| `403` | The token lacks the scope, or the caller is not allowed to perform the action |
 | `404` | Revoking a share that does not exist |
 | `409` | The snippet already has an owner, or it is already shared with that user |
 
@@ -178,6 +186,11 @@ The service listens on `http://localhost:8080` and uses its own database contain
 | `POSTGRES_PASSWORD` | Database password |
 | `DB_HOST` | Database host (set by compose, defaults to `localhost`) |
 | `DB_PORT` | Database port (defaults to `5432`) |
+| `AUTH0_DOMAIN` | Auth0 tenant domain, e.g. `snippet-searcher-bry.us.auth0.com` |
+| `AUTH0_AUDIENCE` | Identifier of the Auth0 API, `https://snippet-searcher-api` |
+
+The service does not start without `AUTH0_DOMAIN` and `AUTH0_AUDIENCE`. The token's signing
+keys are downloaded from the tenant on the first request, not at startup.
 
 ## Continuous integration
 
@@ -205,7 +218,7 @@ The service is deployed in the Docker Swarm stack defined in
 
 | Service | Image | Notes |
 | --- | --- | --- |
-| `snippet-permission-service` | `$PERMISSION_SERVICE_IMAGE` | Published on port `8081` |
+| `snippet-permission-service` | `$PERMISSION_SERVICE_IMAGE` | Internal only, no published port |
 | `snippet-permission-db` | `postgres:17` | Own volume, pinned to the manager node |
 
 Inside the `snippet-network` overlay network other services reach it at
@@ -222,7 +235,7 @@ The package in GHCR is public, so Swarm nodes pull the image without logging in.
 | `PermissionRoleTest`, `SnippetPermissionTest` | Domain rules |
 | `PermissionUseCasesTest` | Use cases against an in-memory repository |
 | `JpaPermissionPersistenceTest` | JPA adapters, unique constraint, relationship queries |
-| `PermissionControllerIntegrationTest` | HTTP endpoints and status codes |
+| `PermissionControllerIntegrationTest` | HTTP endpoints, status codes, `401` and scopes, with mock JWTs |
 
 Persistence and integration tests run against H2 in PostgreSQL mode, so `./gradlew check`
 does not need Docker.
@@ -239,8 +252,18 @@ does not need Docker.
   sorting and pagination stay in `snippet-service`.
 - **Unknown permission means denied.** A user with no relation to a snippet receives `403`
   instead of `404`, so the service does not reveal which snippets exist.
-- **`X-User-Id` header as a temporary identity.** It will be replaced by the `sub` claim of the
-  Auth0 JWT without changing the domain or the use cases.
+- **Every service validates the token.** snippet-service forwards the user's access token
+  instead of passing a user id, and this service validates its signature, issuer, audience and
+  expiry again. A request that reached it without going through snippet-service still needs a
+  valid token.
+- **The caller comes from the token, never from the request.** `sub` is the owner on `/owner`,
+  the requester on share, revoke and delete, and the user on `/check` and `/snippets`. Earlier
+  versions took the user from an `X-User-Id` header or a `userId` parameter, which anyone could
+  forge.
+- **Scopes for the API, permissions for the snippet.** `read:snippets` and `write:snippets`
+  (granted through the Auth0 role `snippet-user`) say what the caller can do with the API;
+  the stored relations say which snippets. It is the "RBAC for the app, ACL for the resources"
+  split from the course.
 - **Database constraint as the last line of defence.** Use cases check for duplicates, and the
   `unique (snippet_id, user_id)` constraint covers concurrent requests. Its violation is
   translated to `409` instead of `500`.
@@ -252,6 +275,4 @@ does not need Docker.
 
 ## Pending
 
-- Integration with `snippet-service` (owner registration on create, permission checks, listing).
-- Auth0: JWT validation, user identity and user search for #7.
-- Routing through the Nginx gateway of the stack instead of the published port `8081`.
+- The user search for #7 lives in snippet-service (Auth0 Management API), not here.
