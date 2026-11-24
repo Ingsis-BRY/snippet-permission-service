@@ -197,7 +197,7 @@ keys are downloaded from the tenant on the first request, not at startup.
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | `CI.yml` | Pull request or push to `main` | Runs `./gradlew check` |
-| `publish-image.yml` | Push to `main` | Builds and pushes `ghcr.io/ingsis-bry/snippet-permission-service` tagged `latest` and with the commit SHA |
+| `publish-image.yml` | Push to `main` | Runs `./gradlew check`; only if it passes, builds and pushes `ghcr.io/ingsis-bry/snippet-permission-service` tagged `latest` and with the commit SHA |
 
 Both workflows need these repository (or organization) secrets to resolve the convention
 plugins:
@@ -227,6 +227,15 @@ Inside the `snippet-network` overlay network other services reach it at
 mapped to the `POSTGRES_*` variables the service reads.
 
 The package in GHCR is public, so Swarm nodes pull the image without logging in.
+
+### Operations
+
+| Concern | How |
+| --- | --- |
+| Health | `GET /actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness`, without a token and without details. No other actuator endpoint is exposed. The runtime image has `curl` for the Swarm healthcheck. |
+| Logs | Set `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` for ECS JSON logs on stdout (Spring Boot structured logging). |
+| Tracing | Micrometer Tracing with Brave, no exporter, sampling `1.0`. A W3C `traceparent` from snippet-service is continued, and `traceId`/`spanId` go to the MDC and the ECS logs. |
+| New Relic | The image ships the agent at `/app/newrelic/newrelic.jar` and starts with it. |
 
 ## Tests
 

@@ -10,8 +10,9 @@ import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
 
 /**
- * Every request needs an Auth0 access token. Its signature, issuer, audience and expiry are
- * validated from `spring.security.oauth2.resourceserver.jwt.*` in application.yml.
+ * Every request needs an Auth0 access token, except the actuator health probes. Its signature,
+ * issuer, audience and expiry are validated from `spring.security.oauth2.resourceserver.jwt.*`
+ * in application.yml.
  *
  * Scopes say what the caller may do with the API; which snippet they may touch is decided by
  * the permissions stored here.
@@ -24,6 +25,9 @@ class SecurityConfiguration {
         http
             .authorizeHttpRequests {
                 it
+                    // Health probes for the orchestrator. Only `health` is exposed (application.yml).
+                    .requestMatchers("/actuator/health", "/actuator/health/**")
+                    .permitAll()
                     // Spring maps each value of the token's "scope" claim to "SCOPE_<value>".
                     .requestMatchers(HttpMethod.GET, "/permissions/**")
                     .hasAuthority(READ_SCOPE)
