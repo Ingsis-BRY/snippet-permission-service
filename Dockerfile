@@ -27,6 +27,11 @@ RUN --mount=type=cache,target=/tmp/newrelic-cache \
 
 FROM eclipse-temurin:21-jre
 
+# The Swarm healthcheck calls /actuator/health/readiness with curl.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=builder /app/build/libs/*.jar app.jar

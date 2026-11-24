@@ -16,3 +16,20 @@ spring:
           issuer-uri: "https://${AUTH0_DOMAIN}/"
           # Rejects tokens that were not issued for the Snippet Searcher API.
           audiences: "${AUTH0_AUDIENCE}"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only health is public; it is what the Swarm healthcheck calls.
+        include: health
+  endpoint:
+    health:
+      # /actuator/health/liveness and /actuator/health/readiness.
+      probes:
+        enabled: true
+      show-details: never
+  tracing:
+    sampling:
+      # Every request gets a trace id, so logs can be correlated across services.
+      probability: 1.0
